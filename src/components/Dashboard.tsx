@@ -490,6 +490,13 @@ const Dashboard: React.FC<{
     let used = 0;
     let reqCount = 0;
 
+    // Hash join index for ledger books to avoid N+1 linear scans per ministry
+    const ledgerBookMap = new Map<string, typeof ledgerBooks[0]>();
+    ledgerBooks.forEach(lb => {
+      if (lb.ministryName) ledgerBookMap.set(lb.ministryName.toLowerCase().trim(), lb);
+      if (lb.ministryId) ledgerBookMap.set(lb.ministryId.toLowerCase().trim(), lb);
+    });
+
     selectedMinistries.forEach(min => {
       const cleanMin = min.toLowerCase().trim();
       
@@ -502,7 +509,7 @@ const Dashboard: React.FC<{
       let minAllocated = minProjects.reduce((sum, p) => sum + (Number(p.allocatedBudget) || 0), 0);
       
       if (minAllocated === 0) {
-        const matchingLedger = ledgerBooks.find(lb => {
+        const matchingLedger = ledgerBookMap.get(cleanMin) || ledgerBooks.find(lb => {
           const lbName = (lb.ministryName || "").toLowerCase().trim();
           const lbId = (lb.ministryId || "").toLowerCase().trim();
           return lbName === cleanMin || lbId === cleanMin || lbName.includes(cleanMin) || cleanMin.includes(lbName);

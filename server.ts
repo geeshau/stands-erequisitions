@@ -730,27 +730,29 @@ async function purgeAndPersistAllRequisitions() {
       console.log(`[Base64 Purger] Startup sweep: Purged base64 attachments from ${totalPurged} JSON requisitions records.`);
     }
 
-    // Purge from MongoDB if connected
+    // Purge from MongoDB if connected - execute in a single bulk operation to prevent N+1 writes
     if (mongoose.connection.readyState === 1) {
       const ReqModel = mongoose.models.Requisition || mongoose.model("Requisition");
       if (ReqModel) {
         const dbItems = await ReqModel.find({}).lean();
-        let dbPurged = 0;
+        const bulkOps: any[] = [];
         for (const item of dbItems) {
           const sanitized = sanitizeRequisitionAttachments(item, targetDir);
           if (
             JSON.stringify(sanitized.attachments) !== JSON.stringify(item.attachments) ||
             JSON.stringify(sanitized.receipts) !== JSON.stringify(item.receipts)
           ) {
-            await ReqModel.updateOne(
-              { _id: item._id },
-              { $set: { attachments: sanitized.attachments, receipts: sanitized.receipts } }
-            );
-            dbPurged++;
+            bulkOps.push({
+              updateOne: {
+                filter: { _id: item._id },
+                update: { $set: { attachments: sanitized.attachments, receipts: sanitized.receipts } }
+              }
+            });
           }
         }
-        if (dbPurged > 0) {
-          console.log(`[Base64 Purger] Startup sweep: Purged base64 attachments from ${dbPurged} MongoDB documents.`);
+        if (bulkOps.length > 0) {
+          await ReqModel.bulkWrite(bulkOps);
+          console.log(`[Base64 Purger] Startup sweep: Purged base64 attachments from ${bulkOps.length} MongoDB documents in a single batched operation.`);
         }
       }
     }
@@ -1680,13 +1682,28 @@ async function startServer() {
         ? String(req.query.collections).split(",").map(c => c.trim()).filter(Boolean)
         : collectionsList;
 
-      for (const col of requestedCols) {
-        if (!collectionsList.includes(col)) continue;
-        if (mongoose.connection.readyState === 1) {
-          const Model = modelMappings[col];
-          if (Model) {
-            const data = await Model.find({}).lean();
-            dataMap[col] = data.map((item: any) => {
+      const results = await Promise.all(
+        requestedCols.map(async (col) => {
+          if (!collectionsList.includes(col)) return { col, data: [] };
+          if (mongoose.connection.readyState === 1) {
+            const Model = modelMappings[col];
+            if (Model) {
+              const data = await Model.find({}).lean();
+              const processed = data.map((item: any) => {
+                let sanitized = col === "requisitions" ? sanitizeRequisitionAttachments(item, getUploadsDir()) : item;
+                if (col === "users") {
+                  sanitized = enforceServerUserGroup(sanitized);
+                }
+                const { _id, __v, ...rest } = sanitized;
+                const snakeRest = toSnakeCase(rest);
+                return { id: snakeRest.id || String(_id), ...snakeRest };
+              });
+              return { col, data: processed };
+            }
+            return { col, data: [] };
+          } else {
+            const data = readJsonCollection(col);
+            const processed = data.map((item: any) => {
               let sanitized = col === "requisitions" ? sanitizeRequisitionAttachments(item, getUploadsDir()) : item;
               if (col === "users") {
                 sanitized = enforceServerUserGroup(sanitized);
@@ -1695,21 +1712,13 @@ async function startServer() {
               const snakeRest = toSnakeCase(rest);
               return { id: snakeRest.id || String(_id), ...snakeRest };
             });
-          } else {
-            dataMap[col] = [];
+            return { col, data: processed };
           }
-        } else {
-          const data = readJsonCollection(col);
-          dataMap[col] = data.map((item: any) => {
-            let sanitized = col === "requisitions" ? sanitizeRequisitionAttachments(item, getUploadsDir()) : item;
-            if (col === "users") {
-              sanitized = enforceServerUserGroup(sanitized);
-            }
-            const { _id, __v, ...rest } = sanitized;
-            const snakeRest = toSnakeCase(rest);
-            return { id: snakeRest.id || String(_id), ...snakeRest };
-          });
-        }
+        })
+      );
+
+      for (const resItem of results) {
+        dataMap[resItem.col] = resItem.data;
       }
 
       const jsonString = JSON.stringify(dataMap);
@@ -1738,21 +1747,87 @@ async function startServer() {
   app.get("/api/requisitions", async (req, res) => {
     try {
       let cleanData: any[];
+      const shouldJoin = req.query.join === "true" || req.query.joined === "true" || req.query.includeRelations === "true";
+
       if (mongoose.connection.readyState === 1) {
-        const data = await mongoose.model('Requisition').find({}).sort({ createdAt: -1 }).lean();
-        cleanData = data.map((item: any) => {
+        let rawData: any[];
+        if (shouldJoin) {
+          // Perform joined query via MongoDB $lookup aggregation to eliminate N+1 queries for relations
+          rawData = await mongoose.model('Requisition').aggregate([
+            { $sort: { createdAt: -1 } },
+            {
+              $lookup: {
+                from: "projects",
+                localField: "projectId",
+                foreignField: "id",
+                as: "joinedProject"
+              }
+            },
+            { $unwind: { path: "$joinedProject", preserveNullAndEmptyArrays: true } },
+            {
+              $lookup: {
+                from: "church_groups",
+                localField: "groupId",
+                foreignField: "id",
+                as: "joinedGroup"
+              }
+            },
+            { $unwind: { path: "$joinedGroup", preserveNullAndEmptyArrays: true } },
+            {
+              $lookup: {
+                from: "users",
+                localField: "requesterId",
+                foreignField: "id",
+                as: "joinedRequester"
+              }
+            },
+            { $unwind: { path: "$joinedRequester", preserveNullAndEmptyArrays: true } }
+          ]);
+        } else {
+          rawData = await mongoose.model('Requisition').find({}).sort({ createdAt: -1 }).lean();
+        }
+        cleanData = rawData.map((item: any) => {
           const sanitized = sanitizeRequisitionAttachments(item, getUploadsDir());
-          const { _id, __v, ...rest } = sanitized;
+          const { _id, __v, joinedProject, joinedGroup, joinedRequester, ...rest } = sanitized;
           const snakeRest = toSnakeCase(rest);
-          return { id: snakeRest.id || String(_id), ...snakeRest };
+          const result: any = { id: snakeRest.id || String(_id), ...snakeRest };
+          if (shouldJoin) {
+            result.project = joinedProject ? toSnakeCase(joinedProject) : null;
+            result.church_group = joinedGroup ? toSnakeCase(joinedGroup) : null;
+            result.requester = joinedRequester ? toSnakeCase(joinedRequester) : null;
+          }
+          return result;
         });
       } else {
         const data = readJsonCollection("requisitions");
-        cleanData = data.map((item: any) => {
+        let processedData = data;
+        if (shouldJoin) {
+          const projects = readJsonCollection("projects");
+          const groups = readJsonCollection("church_groups");
+          const users = readJsonCollection("users");
+
+          const projMap = new Map(projects.map((p: any) => [p.id, p]));
+          const grpMap = new Map(groups.map((g: any) => [g.id || g.name, g]));
+          const userMap = new Map(users.map((u: any) => [u.id, u]));
+
+          processedData = data.map((item: any) => ({
+            ...item,
+            joinedProject: item.projectId ? projMap.get(item.projectId) || null : null,
+            joinedGroup: item.groupId ? grpMap.get(item.groupId) || null : null,
+            joinedRequester: item.requesterId ? userMap.get(item.requesterId) || null : null
+          }));
+        }
+        cleanData = processedData.map((item: any) => {
           const sanitized = sanitizeRequisitionAttachments(item, getUploadsDir());
-          const { _id, __v, ...rest } = sanitized;
+          const { _id, __v, joinedProject, joinedGroup, joinedRequester, ...rest } = sanitized;
           const snakeRest = toSnakeCase(rest);
-          return { id: snakeRest.id || String(_id), ...snakeRest };
+          const result: any = { id: snakeRest.id || String(_id), ...snakeRest };
+          if (shouldJoin) {
+            result.project = joinedProject ? toSnakeCase(joinedProject) : null;
+            result.church_group = joinedGroup ? toSnakeCase(joinedGroup) : null;
+            result.requester = joinedRequester ? toSnakeCase(joinedRequester) : null;
+          }
+          return result;
         });
       }
 
@@ -1874,12 +1949,60 @@ async function startServer() {
             { referenceNo: targetId }
           ]
         };
-        matchedItem = await mongoose.model('Requisition').findOne(query).lean();
+        // Single joined query using MongoDB $lookup aggregation to eliminate N+1 secondary lookups
+        const aggResults = await mongoose.model('Requisition').aggregate([
+          { $match: query },
+          { $limit: 1 },
+          {
+            $lookup: {
+              from: "projects",
+              localField: "projectId",
+              foreignField: "id",
+              as: "joinedProject"
+            }
+          },
+          { $unwind: { path: "$joinedProject", preserveNullAndEmptyArrays: true } },
+          {
+            $lookup: {
+              from: "church_groups",
+              localField: "groupId",
+              foreignField: "id",
+              as: "joinedGroup"
+            }
+          },
+          { $unwind: { path: "$joinedGroup", preserveNullAndEmptyArrays: true } },
+          {
+            $lookup: {
+              from: "users",
+              localField: "requesterId",
+              foreignField: "id",
+              as: "joinedRequester"
+            }
+          },
+          { $unwind: { path: "$joinedRequester", preserveNullAndEmptyArrays: true } }
+        ]);
+        matchedItem = aggResults[0] || null;
       }
 
       if (!matchedItem) {
         const list = readJsonCollection("requisitions");
         matchedItem = list.find(isMatch);
+        if (matchedItem) {
+          const projects = readJsonCollection("projects");
+          const groups = readJsonCollection("church_groups");
+          const users = readJsonCollection("users");
+
+          const projMap = new Map(projects.map((p: any) => [p.id, p]));
+          const grpMap = new Map(groups.map((g: any) => [g.id || g.name, g]));
+          const userMap = new Map(users.map((u: any) => [u.id, u]));
+
+          matchedItem = {
+            ...matchedItem,
+            joinedProject: matchedItem.projectId ? projMap.get(matchedItem.projectId) || null : null,
+            joinedGroup: matchedItem.groupId ? grpMap.get(matchedItem.groupId) || null : null,
+            joinedRequester: matchedItem.requesterId ? userMap.get(matchedItem.requesterId) || null : null
+          };
+        }
       }
 
       if (!matchedItem) {
@@ -1887,7 +2010,7 @@ async function startServer() {
       }
 
       const sanitized = sanitizeRequisitionAttachments(matchedItem, getUploadsDir());
-      const { _id, __v, ...rest } = sanitized;
+      const { _id, __v, joinedProject, joinedGroup, joinedRequester, ...rest } = sanitized;
       const snakeRest = toSnakeCase(rest);
       const camelRest = toCamelCase(rest);
 
@@ -1910,7 +2033,10 @@ async function startServer() {
         attachments: rest.attachments || [],
         comments: rest.comments || [],
         notificationEmails: rest.notificationEmails || rest.notification_emails || [],
-        installments: rest.installments || []
+        installments: rest.installments || [],
+        project: joinedProject ? toSnakeCase(joinedProject) : (rest.project || null),
+        churchGroup: joinedGroup ? toSnakeCase(joinedGroup) : (rest.churchGroup || rest.church_group || null),
+        requesterProfile: joinedRequester ? toSnakeCase(joinedRequester) : (rest.requesterProfile || rest.requester_profile || null)
       };
 
       return res.json(cleanResult);
@@ -2284,15 +2410,12 @@ async function startServer() {
 
     try {
       if (mongoose.connection.readyState === 1) {
-        for (const col of ["users", "requisitions", "church_groups"]) {
-          const Model = modelMappings[col];
-          if (Model) {
-            const ct = await Model.countDocuments();
-            report.mongodb.counts[col] = ct;
-          } else {
-            report.mongodb.counts[col] = 0;
-          }
-        }
+        await Promise.all(
+          ["users", "requisitions", "church_groups"].map(async (col) => {
+            const Model = modelMappings[col];
+            report.mongodb.counts[col] = Model ? await Model.countDocuments() : 0;
+          })
+        );
       } else {
         for (const col of ["users", "requisitions", "church_groups"]) {
           report.mongodb.counts[col] = 0;
@@ -2471,6 +2594,59 @@ async function startServer() {
     } catch (e) {
       return null;
     }
+  }
+
+  // Batch-find multiple user documents across MongoDB and local JSON in a single query (replaces N+1 query loops)
+  async function findUsersByEmails(emails: string[]): Promise<Map<string, any>> {
+    const userMap = new Map<string, any>();
+    if (!emails || emails.length === 0) return userMap;
+
+    const normalizedEmails = Array.from(
+      new Set(
+        emails
+          .filter(e => typeof e === "string" && e.trim().includes("@"))
+          .map(e => e.toLowerCase().trim())
+      )
+    );
+
+    if (normalizedEmails.length === 0) return userMap;
+
+    try {
+      if (mongoose.connection.readyState === 1 && models.User) {
+        const dbUsers = await (models.User as any).find({
+          $or: [
+            { email: { $in: normalizedEmails } },
+            { email_address: { $in: normalizedEmails } }
+          ]
+        }).lean();
+
+        for (const u of dbUsers) {
+          if (u.email) userMap.set(String(u.email).toLowerCase().trim(), u);
+          if (u.email_address) userMap.set(String(u.email_address).toLowerCase().trim(), u);
+        }
+      }
+    } catch (e) {
+      console.warn("[findUsersByEmails] Mongo batch fetch error:", e);
+    }
+
+    // Fill in or fallback to JSON collection
+    try {
+      const localUsers = readJsonCollection("users") || [];
+      for (const u of localUsers) {
+        const e1 = (u.email || "").toLowerCase().trim();
+        const e2 = (u.email_address || "").toLowerCase().trim();
+        if (e1 && normalizedEmails.includes(e1) && !userMap.has(e1)) {
+          userMap.set(e1, u);
+        }
+        if (e2 && normalizedEmails.includes(e2) && !userMap.has(e2)) {
+          userMap.set(e2, u);
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    return userMap;
   }
 
   /**
@@ -2897,8 +3073,11 @@ async function startServer() {
       // Process and dispatch individually personalized emails to every recipient
       const results: { email: string; name: string; status: string; error?: string }[] = [];
 
+      // Batch-fetch all recipient users in a single query (eliminates N+1 query loop)
+      const userBatchMap = await findUsersByEmails(allRecipients);
+
       for (const recEmail of allRecipients) {
-        const user = await findUserByEmail(recEmail);
+        const user = userBatchMap.get(recEmail.trim().toLowerCase()) || null;
         const isPrimaryTo = Boolean(to && recEmail === to.trim().toLowerCase());
         const isRequester = Boolean(
           (requesterEmail && recEmail === requesterEmail.trim().toLowerCase()) || 

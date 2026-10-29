@@ -710,6 +710,17 @@ export const FinanceLedgerPanel: React.FC = () => {
     );
   }, [churchGroups, groupSearchQuery]);
 
+  // Hash join index: O(1) project lookup by groupId for the active fiscal year
+  const activeYearProjectByGroup = useMemo(() => {
+    const map = new Map<string, Project>();
+    projects.forEach(p => {
+      if (p.fiscalYear === activeYear && p.groupId) {
+        map.set(p.groupId, p);
+      }
+    });
+    return map;
+  }, [projects, activeYear]);
+
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     // Remove all characters except digits and decimal point
@@ -3248,8 +3259,8 @@ export const FinanceLedgerPanel: React.FC = () => {
                         >
                           {filteredGroups.length > 0 ? (
                             filteredGroups.map(cg => {
-                              // Check if this group already has a budget allocation for activeYear
-                              const activeAllocation = projects.find(p => p.groupId === cg.name && p.fiscalYear === activeYear);
+                              // Check if this group already has a budget allocation for activeYear via O(1) hash join
+                              const activeAllocation = activeYearProjectByGroup.get(cg.name);
                               const hasActiveAllocation = activeAllocation && activeAllocation.allocatedBudget > 0;
                               
                               return (
@@ -3262,7 +3273,7 @@ export const FinanceLedgerPanel: React.FC = () => {
                                     setIsGroupDropdownOpen(false);
 
                                     // Suggest a default unique accounting code for active fiscal year
-                                    const existingProjectWithCode = projects.find(p => p.groupId === cg.name && p.fiscalYear === activeYear && p.accountNumber);
+                                    const existingProjectWithCode = activeAllocation && activeAllocation.accountNumber ? activeAllocation : undefined;
                                     if (existingProjectWithCode) {
                                       setAllocationAccountNumber(existingProjectWithCode.accountNumber || "");
                                     } else {

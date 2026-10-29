@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { 
   ShieldCheck, 
   Fingerprint, 
@@ -80,13 +80,15 @@ export const ApprovalsPanel: React.FC = () => {
     }
   };
 
+  const requisitionMap = useMemo(() => new Map(requisitions.map(r => [r.id, r])), [requisitions]);
+
   const handleApprove = async () => {
     if (!selectedReq && !isBulkMode) return;
     setLoading(true);
     try {
       if (isBulkMode) {
         const promises = Array.from(selectedIds).map(async (id) => {
-          const req = requisitions.find(r => r.id === id);
+          const req = requisitionMap.get(id);
           if (!req) return;
           
           const nextStatus = req.status === RequisitionStatus.SUBMITTED 

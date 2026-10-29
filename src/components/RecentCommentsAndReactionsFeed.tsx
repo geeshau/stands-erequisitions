@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useRequisitions } from "../contexts/RequisitionContext";
 import { Requisition, Comment, UserRole, RequisitionStatus } from "../types";
-import { cn, resolveSenderName } from "../lib/utils";
+import { cn, resolveSenderName, createUserLookupIndex } from "../lib/utils";
 import { renderFormattedCommentText } from "../lib/commentFormatUtils";
 import { databaseService } from "../lib/databaseService";
 import { handleReactionLogic } from "./RequisitionsPanel";
@@ -252,6 +252,8 @@ export const RecentCommentsAndReactionsFeed: React.FC<RecentCommentsAndReactions
   }, [currentUser]);
 
   // Extract all flattened comment items from accessible requisitions
+  const userLookupIndex = useMemo(() => createUserLookupIndex(users || []), [users]);
+
   const flatCommentsData = useMemo(() => {
     const list: FlatCommentCardData[] = [];
     if (!requisitions || requisitions.length === 0) return list;
@@ -267,13 +269,11 @@ export const RecentCommentsAndReactionsFeed: React.FC<RecentCommentsAndReactions
         const processComment = (commentObj: Comment, isReply: boolean = false) => {
           const resolvedName = resolveSenderName(
             { id: commentObj.authorId, email: commentObj.authorEmail, name: commentObj.authorName, role: commentObj.authorRole },
-            users || []
+            userLookupIndex
           ) || commentObj.authorName || (commentObj.authorEmail ? commentObj.authorEmail.split("@")[0] : "User");
 
-          const userObj = users.find(u => 
-            (u.id && commentObj.authorId && u.id === commentObj.authorId) ||
-            (u.email && commentObj.authorEmail && u.email.toLowerCase() === commentObj.authorEmail.toLowerCase())
-          );
+          const userObj = (commentObj.authorId ? userLookupIndex.byId.get(commentObj.authorId) : null) ||
+            (commentObj.authorEmail ? userLookupIndex.byEmail.get(commentObj.authorEmail.toLowerCase().trim()) : null);
 
           const avatar = commentObj.authorAvatar || commentObj.authorPhotoURL || userObj?.photoURL || (userObj as any)?.avatarUrl || "";
           const handle = `@${(commentObj.authorEmail ? commentObj.authorEmail.split("@")[0] : resolvedName.replace(/\s+/g, "").toLowerCase())}`;

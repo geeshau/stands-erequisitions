@@ -74,6 +74,30 @@ const RequisitionSchema = new Schema<IRequisition>({
 }, {
   timestamps: true,
   strict: false,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
+});
+
+// Virtual Joins to eliminate N+1 queries when populating related entities
+RequisitionSchema.virtual('project', {
+  ref: 'Project',
+  localField: 'projectId',
+  foreignField: 'id',
+  justOne: true
+});
+
+RequisitionSchema.virtual('churchGroup', {
+  ref: 'ChurchGroup',
+  localField: 'groupId',
+  foreignField: 'id',
+  justOne: true
+});
+
+RequisitionSchema.virtual('requester', {
+  ref: 'User',
+  localField: 'requesterId',
+  foreignField: 'id',
+  justOne: true
 });
 
 export const Requisition = mongoose.models.Requisition || mongoose.model<IRequisition>('Requisition', RequisitionSchema, 'requisitions');

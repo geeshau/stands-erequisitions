@@ -1991,9 +1991,17 @@ export const RequisitionProvider: React.FC<{ children: React.ReactNode }> = ({ c
       let clonedCount = 0;
       let totalValueCloned = 0;
 
+      // Hash join index: O(1) target project lookup by groupId
+      const targetProjectsMap = new Map<string, Project>();
+      projects.forEach(tp => {
+        if (tp.fiscalYear === targetYear) {
+          targetProjectsMap.set(tp.groupId, tp);
+        }
+      });
+
       for (const p of sourceProjects) {
-        // Find if target project already exists to avoid duplicate entries
-        const targetProjMatch = projects.find(tp => tp.groupId === p.groupId && tp.fiscalYear === targetYear);
+        // Find if target project already exists via O(1) hash join
+        const targetProjMatch = targetProjectsMap.get(p.groupId);
         if (!targetProjMatch) {
           const nextProjId = "p-" + Math.random().toString(36).substring(2, 9);
           const nextProject = {

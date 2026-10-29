@@ -284,9 +284,24 @@ export function formatRequisitionAmount(req?: { amount: number; currency?: strin
 }
 
 
+export function createUserLookupIndex(usersList: any[] = []): { byId: Map<string, any>; byEmail: Map<string, any> } {
+  const byId = new Map<string, any>();
+  const byEmail = new Map<string, any>();
+  if (Array.isArray(usersList)) {
+    for (const u of usersList) {
+      if (u) {
+        if (u.id) byId.set(String(u.id), u);
+        if (u.email) byEmail.set(String(u.email).toLowerCase().trim(), u);
+        if (u.email_address) byEmail.set(String(u.email_address).toLowerCase().trim(), u);
+      }
+    }
+  }
+  return { byId, byEmail };
+}
+
 export function resolveSenderName(
   userObj: { id?: string; email?: string; name?: string; role?: string } | null | undefined,
-  usersList: any[] = []
+  usersList: any[] | { byId?: Map<string, any>; byEmail?: Map<string, any> } | Map<string, any> = []
 ): string {
   if (!userObj) return "";
 
@@ -309,11 +324,22 @@ export function resolveSenderName(
     );
   };
 
-  // Tier 1: Look up in active User Directory (by ID or Email)
-  const matched = Array.isArray(usersList) ? usersList.find(u => 
-    (u.id && userObj.id && u.id === userObj.id) ||
-    (u.email && userObj.email && u.email.toLowerCase() === userObj.email.toLowerCase())
-  ) : null;
+  // Tier 1: Look up in active User Directory (by ID or Email using Hash Join or Array lookup)
+  let matched: any = null;
+  if (usersList instanceof Map) {
+    matched = (userObj.id ? usersList.get(userObj.id) : null) || 
+              (userObj.email ? usersList.get(userObj.email.toLowerCase().trim()) : null);
+  } else if (usersList && typeof usersList === "object" && ("byId" in usersList || "byEmail" in usersList)) {
+    const index = usersList as { byId?: Map<string, any>; byEmail?: Map<string, any> };
+    matched = (userObj.id && index.byId ? index.byId.get(userObj.id) : null) ||
+              (userObj.email && index.byEmail ? index.byEmail.get(userObj.email.toLowerCase().trim()) : null);
+  } else if (Array.isArray(usersList)) {
+    const cleanEmail = userObj.email ? userObj.email.toLowerCase().trim() : "";
+    matched = usersList.find(u => 
+      (u.id && userObj.id && u.id === userObj.id) ||
+      (u.email && cleanEmail && u.email.toLowerCase().trim() === cleanEmail)
+    );
+  }
 
   const matchedName = matched?.name?.trim();
   if (matchedName && !isGeneric(matchedName) && !matchedName.includes("@")) {

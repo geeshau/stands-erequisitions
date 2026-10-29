@@ -177,12 +177,19 @@ export const BudgetCircularGauges: React.FC<BudgetCircularGaugesProps> = ({ proj
     const existing = projects.filter(p => p.fiscalYear === activeYear || (!p.fiscalYear && activeYear === 2026));
     const existingGroupNames = new Set(existing.map(p => (p.groupId || p.name).toLowerCase().trim()));
 
+    // Hash join index for ledger books to prevent N+1 queries in the loop
+    const ledgerBookMap = new Map<string, typeof ledgerBooks[0]>();
+    ledgerBooks.forEach(lb => {
+      if (lb.ministryName) ledgerBookMap.set(lb.ministryName.toLowerCase().trim(), lb);
+      if (lb.ministryId) ledgerBookMap.set(lb.ministryId.toLowerCase().trim(), lb);
+    });
+
     const synthesized: Project[] = [];
     churchGroups.forEach(cg => {
       const cgClean = cg.name.toLowerCase().trim();
       if (!existingGroupNames.has(cgClean)) {
-        // Find if there is a ledger book with budget limit for this group
-        const matchingLedger = ledgerBooks.find(lb => lb.ministryName.toLowerCase().trim() === cgClean || lb.ministryId.toLowerCase().trim() === cgClean);
+        // Find if there is a ledger book with budget limit for this group via O(1) hash join
+        const matchingLedger = ledgerBookMap.get(cgClean);
         const allocatedBudget = matchingLedger ? matchingLedger.budgetLimit : 0;
 
         synthesized.push({

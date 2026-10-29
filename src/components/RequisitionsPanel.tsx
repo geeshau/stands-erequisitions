@@ -102,7 +102,8 @@ import {
   getAbsoluteAttachmentUrl, 
   handleImageError, 
   resolveSenderName, 
-  getNamedImagePlaceholder 
+  getNamedImagePlaceholder,
+  createUserLookupIndex
 } from "../lib/utils";
 import { PdfThumbnailPreview, preloadPdfThumbnail } from "./PdfThumbnailPreview";
 import { 
@@ -233,21 +234,20 @@ function getFileTypeBadge(fileName: string) {
 }
 
 // Threaded replies summary formatter (e.g., "5 replies from Dom, Alice, Matt, and others")
-export function formatRepliesSummary(replies: any[], users: any[] = []): { count: number; text: string; authors: { name: string; avatar: string }[] } {
+export function formatRepliesSummary(replies: any[], users: any[] | { byId: Map<string, any>; byEmail: Map<string, any> } = []): { count: number; text: string; authors: { name: string; avatar: string }[] } {
   const count = replies.length;
   if (count === 0) return { count: 0, text: "", authors: [] };
 
   const authors: { name: string; avatar: string }[] = [];
   const seen = new Set<string>();
+  const userIndex = Array.isArray(users) ? createUserLookupIndex(users) : users;
 
   for (const r of replies) {
-    const userObj = users.find((u: any) => 
-      (u.id && r.authorId && u.id === r.authorId) || 
-      (u.email && r.authorEmail && u.email.toLowerCase() === r.authorEmail.toLowerCase())
-    );
+    const userObj = (r.authorId && userIndex?.byId ? userIndex.byId.get(r.authorId) : null) ||
+      (r.authorEmail && userIndex?.byEmail ? userIndex.byEmail.get(r.authorEmail.toLowerCase().trim()) : null);
     const resolvedName = resolveSenderName(
       { id: r.authorId, email: r.authorEmail, name: r.authorName, role: r.authorRole },
-      users
+      userIndex
     ) || r.authorName || (r.authorEmail ? r.authorEmail.split("@")[0] : "User");
 
     const avatar = r.authorAvatar || r.authorPhotoURL || (userObj?.photoURL || (userObj as any)?.avatarUrl) || "";
@@ -5314,6 +5314,7 @@ export interface DetailModalProps {
 
 export const RequisitionDetailModal: React.FC<DetailModalProps> = ({ req: initialReq, onClose, onDelete, onRestore, onGenerateReceipt, onEdit, isPage }) => {
   const { currentUser, updateRequisitionStatus, updateRequisition, restoreRequisition, sendEmailNotification, uploadReceipts, globalSearchTerm, projects, triggerToast, vendors, requisitions, users, addAlert, canPerform } = useRequisitions();
+  const userLookupIndex = useMemo(() => createUserLookupIndex(users || []), [users]);
   const req = requisitions.find(r => r.id === initialReq.id) || initialReq;
   const isDeleted = req.status === RequisitionStatus.DELETED || req.isDeleted || Boolean((req as any).is_deleted);
   const [isRestoring, setIsRestoring] = useState(false);
@@ -5835,7 +5836,7 @@ export const RequisitionDetailModal: React.FC<DetailModalProps> = ({ req: initia
               cleanEmail !== authorEmail && 
               !mentionedUsers.some(mu => mu.email?.toLowerCase() === cleanEmail)
             ) {
-              const matchedUser = users.find(usr => usr.email?.toLowerCase() === cleanEmail);
+              const matchedUser = userLookupIndex.byEmail.get(cleanEmail);
               receiversMap.set(cleanEmail, matchedUser?.name || "Subscriber");
             }
           }
@@ -7232,10 +7233,8 @@ export const RequisitionDetailModal: React.FC<DetailModalProps> = ({ req: initia
                           const diffMs = Date.now() - new Date(comment.createdAt || comment.timestamp).getTime();
                           const canEdit = isAuthor && (diffMs / 60000 <= 15);
                           
-                          const commentUser = users.find((u: any) => 
-                            (u.id && comment.authorId && u.id === comment.authorId) || 
-                            (u.email && comment.authorEmail && u.email.toLowerCase() === comment.authorEmail.toLowerCase())
-                          );
+                          const commentUser = (comment.authorId ? userLookupIndex.byId.get(comment.authorId) : null) || 
+                            (comment.authorEmail ? userLookupIndex.byEmail.get(comment.authorEmail.toLowerCase().trim()) : null);
 
                           const displayName = resolveSenderName(
                             {
@@ -7244,7 +7243,7 @@ export const RequisitionDetailModal: React.FC<DetailModalProps> = ({ req: initia
                               name: comment.authorName,
                               role: comment.authorRole
                             },
-                            users
+                            userLookupIndex
                           ) || comment.authorName || comment.authorEmail || "User";
 
                           const photoURL = comment.authorAvatar || comment.authorPhotoURL || (commentUser?.photoURL || (commentUser as any)?.avatarUrl) || (isAuthor ? (currentUser?.photoURL || (currentUser as any)?.avatarUrl) : "");
@@ -7654,10 +7653,8 @@ export const RequisitionDetailModal: React.FC<DetailModalProps> = ({ req: initia
                                         const isReplyAuthor = reply.authorId === currentUser?.id || (reply.authorEmail && currentUser?.email && reply.authorEmail.toLowerCase() === currentUser.email.toLowerCase());
                                         const canDeleteReply = isReplyAuthor || currentUser?.role === "ADMIN" || currentUser?.role === "SUPER_ADMIN";
                                         
-                                        const replyUser = users.find((u: any) => 
-                                          (u.id && reply.authorId && u.id === reply.authorId) || 
-                                          (u.email && reply.authorEmail && u.email.toLowerCase() === reply.authorEmail.toLowerCase())
-                                        );
+                                        const replyUser = (reply.authorId ? userLookupIndex.byId.get(reply.authorId) : null) || 
+                                          (reply.authorEmail ? userLookupIndex.byEmail.get(reply.authorEmail.toLowerCase().trim()) : null);
 
                                         const replyDisplayName = resolveSenderName(
                                           {
@@ -7666,7 +7663,7 @@ export const RequisitionDetailModal: React.FC<DetailModalProps> = ({ req: initia
                                             name: reply.authorName,
                                             role: reply.authorRole
                                           },
-                                          users
+                                          userLookupIndex
                                         ) || reply.authorName || reply.authorEmail || "User";
 
                                         const replyPhotoURL = reply.authorAvatar || reply.authorPhotoURL || (replyUser?.photoURL || (replyUser as any)?.avatarUrl) || (isReplyAuthor ? (currentUser?.photoURL || (currentUser as any)?.avatarUrl) : "");
@@ -8724,11 +8721,9 @@ export const RequisitionDetailModal: React.FC<DetailModalProps> = ({ req: initia
                         const emailName = formatEmailToName(r.userEmail || r.email || "");
                         const resolvedName = (isCurrent && extractUserDisplayName(currentUser))
                           ? extractUserDisplayName(currentUser)
-                          : (resolveSenderName({ id: r.userId, email: r.userEmail, name: r.userName }, users) || (r.userName && !["user", "anon", "someone", "member"].includes(r.userName.toLowerCase()) ? r.userName : "") || emailName || "Parish Member");
-                        const userObj = users.find((u: any) => 
-                          (u.id && r.userId && u.id === r.userId) || 
-                          (u.email && r.userEmail && u.email.toLowerCase() === r.userEmail.toLowerCase())
-                        );
+                          : (resolveSenderName({ id: r.userId, email: r.userEmail, name: r.userName }, userLookupIndex) || (r.userName && !["user", "anon", "someone", "member"].includes(r.userName.toLowerCase()) ? r.userName : "") || emailName || "Parish Member");
+                        const userObj = (r.userId ? userLookupIndex.byId.get(r.userId) : null) || 
+                          (r.userEmail ? userLookupIndex.byEmail.get(r.userEmail.toLowerCase().trim()) : null);
                         const directoryPic = getUserDirectoryProfilePic(r, users);
                         const avatar = directoryPic || (isCurrent 
                           ? (currentUser?.photoURL || (currentUser as any)?.avatarUrl) 
