@@ -11,9 +11,27 @@
     <link rel="manifest" href="manifest.json" />
     <meta name="theme-color" content="#121214" />
     <link rel="apple-touch-icon" href="/pcea.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="preconnect" href="https://apis.google.com" />
+    <link rel="preconnect" href="https://www.googleapis.com" />
+    <link rel="dns-prefetch" href="https://firebaseinstallations.googleapis.com" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Geist+Mono:wght@100..900&display=swap" media="print" onload="this.media='all'" />
+    <style>
+      /* Critical inline CSS for instant first paint */
+      #root { min-height: 100vh; }
+      .app-loading { display:flex; align-items:center; justify-content:center; height:100vh; background:#f8fafc; }
+      .app-loading-dark { background:#121214; }
+      .app-spinner { width:32px; height:32px; border:3px solid #e2e8f0; border-top-color:#6366f1; border-radius:50%; animation:spin .6s linear infinite; }
+      @keyframes spin { to { transform:rotate(360deg); } }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="app-loading" id="initial-loader">
+        <div class="app-spinner"></div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

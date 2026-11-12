@@ -37,6 +37,18 @@ export default defineConfig(() => {
         'tailwind-merge'
       ],
     },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            'vendor-firebase': ['firebase/app', 'firebase/auth'],
+            'vendor-recharts': ['recharts'],
+            'vendor-motion': ['motion/react'],
+            'vendor-query': ['@tanstack/react-query'],
+          },
+        },
+      },
+    },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modifyâfile watching is disabled to prevent flickering during agent edits.

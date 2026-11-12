@@ -9313,8 +9313,22 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = getDistDir();
-    app.use(express.static(distPath));
+    // Hashed assets are immutable — cache aggressively for 1 year
+    app.use("/assets", express.static(path.join(distPath, "assets"), {
+      maxAge: "365d",
+      immutable: true,
+    }));
+    // Non-hashed root files (index.html, manifest.json, etc.) — no cache
+    app.use(express.static(distPath, {
+      maxAge: 0,
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith(".html")) {
+          res.setHeader("Cache-Control", "no-cache");
+        }
+      },
+    }));
     app.get("*", (req, res) => {
+      res.setHeader("Cache-Control", "no-cache");
       res.sendFile(path.join(distPath, "index.html"));
     });
   }

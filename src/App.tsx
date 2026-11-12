@@ -14,12 +14,10 @@ const sendPasswordResetEmail = async (a: any, b: any) => { };
 import { RequisitionProvider, useRequisitions } from "./contexts/RequisitionContext";
 import { cn } from "./lib/utils";
 import { Sidebar } from "./components/Sidebar";
-import Dashboard from "./components/Dashboard";
+const Dashboard = lazy(() => import("./components/Dashboard"));
 import { useIdleTimeout } from "./hooks/useIdleTimeout";
-import { sendSlackNotification } from "./lib/utils";
 import { PanelSkeletonFallback } from "./components/PanelSkeletonFallback";
 import { getRecentSearches, saveRecentSearchTerm, removeRecentSearchTerm, clearAllRecentSearchTerms } from "./lib/searchHistory";
-import { databaseService } from "./lib/databaseService";
 import { UserRole, RequisitionStatus, BudgetAlert, SearchFilter, PermissionConfig } from "./types";
 import { AnnouncementBanner } from "./components/AnnouncementBanner";
 
@@ -103,7 +101,6 @@ import { motion, AnimatePresence } from "motion/react";
 import { PerformanceTracker } from "./components/PerformanceTracker";
 import { UserAvatar } from "./components/UserAvatar";
 
-import { AlertCircle as AlertCircleIcon } from "lucide-react"; // alias if needed or rely on main imports
 
 interface ToastItemProps {
   toast: BudgetAlert;

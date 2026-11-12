@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useMemo, useState, useCallback, useEffect } from "react";
+import React, { useMemo, useState, useCallback, useEffect, lazy, Suspense } from "react";
 import { ComposedChart, Area, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import { useRequisitions, useActiveFiscalYear } from "../contexts/RequisitionContext";
 import { COMMITTED_REQUISITION_STATUSES, calculateProjectUtilization, getProjectRequisitions } from "../utils/budgetUtils";
@@ -11,13 +11,14 @@ import { RequisitionStatus, UserRole, Requisition } from "../types";
 import { formatCurrency, cn, getDaysSinceSubmission, formatRequisitionAge, isFinalStage } from "../lib/utils";
 import { AlertTriangle, TrendingUp, Layout, Activity, ClipboardList, CheckCircle, Wallet, Users, X, Eye, Repeat, Clock, ArrowUpRight, Search, Trash2, Printer, FileText, ShieldCheck, CalendarRange, HelpCircle, Moon, Sun, Plus, Calendar, ChevronLeft, ChevronRight, Bell } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { ReceiptTemplateGenerator } from "./ReceiptTemplateGenerator";
-import { printSystemLogs } from "../utils/exportUtils";
 import { BudgetCircularGauges } from "./BudgetCircularGauges";
 import { RecentCommentsAndReactionsFeed } from "./RecentCommentsAndReactionsFeed";
 import { GlobalFiscalOverview } from "./GlobalFiscalOverview";
-import { NewRequisitionForm } from "./NewRequisitionForm";
 import { MinistrySpendingFeed } from "./MinistrySpendingFeed";
+
+// Lazy-load heavy modal components only rendered on user interaction
+const ReceiptTemplateGenerator = lazy(() => import("./ReceiptTemplateGenerator").then(m => ({ default: m.ReceiptTemplateGenerator })));
+const NewRequisitionForm = lazy(() => import("./NewRequisitionForm").then(m => ({ default: m.NewRequisitionForm })));
 
 // Custom high-detail chart tooltip
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -1547,7 +1548,10 @@ const Dashboard: React.FC<{
                 <h2 className="text-[10px] md:text-xs font-bold text-slate-800 uppercase tracking-widest">Audit Trail</h2>
               </div>
               <div className="flex items-center gap-3">
-                <button className="text-[8px] md:text-[10px] text-primary font-black uppercase tracking-widest hover:underline transition-all">
+                <button
+                  onClick={() => onViewChange?.("auditTrail")}
+                  className="text-[8px] md:text-[10px] text-primary font-black uppercase tracking-widest hover:underline transition-all cursor-pointer"
+                >
                   View All
                 </button>
               </div>
@@ -1914,10 +1918,12 @@ const Dashboard: React.FC<{
       {/* Receipt Generator Modal */}
       <AnimatePresence>
         {isGeneratingReceipt && (
-          <ReceiptTemplateGenerator 
-            req={isGeneratingReceipt} 
-            onClose={() => setIsGeneratingReceipt(null)} 
-          />
+          <Suspense fallback={null}>
+            <ReceiptTemplateGenerator 
+              req={isGeneratingReceipt} 
+              onClose={() => setIsGeneratingReceipt(null)} 
+            />
+          </Suspense>
         )}
       </AnimatePresence>
 
@@ -2399,7 +2405,11 @@ const Dashboard: React.FC<{
           </div>
         )}
 
-        {isNewRequisitionModalOpen && <NewRequisitionForm onClose={() => setIsNewRequisitionModalOpen(false)} />}
+        {isNewRequisitionModalOpen && (
+          <Suspense fallback={null}>
+            <NewRequisitionForm onClose={() => setIsNewRequisitionModalOpen(false)} />
+          </Suspense>
+        )}
       </AnimatePresence>
     </div>
   );
