@@ -2712,10 +2712,23 @@ export const RequisitionsPanel: React.FC = () => {
     });
   };
 
+  // `now` only powers the short-lived (<8s) "recently approved/disbursed" highlight.
+  // Only run the ticker while at least one requisition was updated in the last 10s,
+  // instead of re-rendering the entire panel every second indefinitely.
+  const hasRecentUpdate = React.useMemo(() => {
+    const cutoff = now - 10000;
+    return requisitions.some(r => {
+      if (r.status !== RequisitionStatus.APPROVED_L2 && r.status !== RequisitionStatus.DISBURSED) return false;
+      const t = new Date(r.updatedAt).getTime();
+      return !isNaN(t) && t > cutoff;
+    });
+  }, [requisitions, now]);
+
   React.useEffect(() => {
+    if (!hasRecentUpdate) return;
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [hasRecentUpdate]);
 
   // Unread comments tracker
   const { 
@@ -2742,7 +2755,7 @@ export const RequisitionsPanel: React.FC = () => {
     return map;
   }, [vendors]);
 
-  const filtered = requisitions.filter(req => {
+  const filtered = useMemo(() => requisitions.filter(req => {
     const term = globalSearchTerm.toLowerCase();
     
     let matchesSearch = false;
@@ -2855,18 +2868,23 @@ export const RequisitionsPanel: React.FC = () => {
     const timeA = new Date(a.submittedAt || a.updatedAt || 0).getTime();
     const timeB = new Date(b.submittedAt || b.updatedAt || 0).getTime();
     return sortDirection === "desc" ? timeB - timeA : timeA - timeB;
-  });
+  }), [
+    requisitions, globalSearchTerm, searchFilter, filterStatus, filterPreset,
+    advancedSearchActive, advancedDateRangePreset, advancedCustomStartDate, advancedCustomEndDate,
+    dateRangePreset, customStartDate, customEndDate, advancedBudgetLine,
+    projectMap, currentUser, canPerform, sortDirection
+  ]);
 
   // Split into active, disbursed, rejected/cancelled, and deleted
-  const activeList = filtered.filter(r => 
+  const activeList = useMemo(() => filtered.filter(r => 
     r.status !== RequisitionStatus.DISBURSED && 
     r.status !== RequisitionStatus.REJECTED && 
     r.status !== RequisitionStatus.CANCELLED && 
     r.status !== RequisitionStatus.DELETED
-  );
-  const disbursedList = filtered.filter(r => r.status === RequisitionStatus.DISBURSED);
-  const rejectedList = filtered.filter(r => r.status === RequisitionStatus.REJECTED || r.status === RequisitionStatus.CANCELLED);
-  const deletedList = filtered.filter(r => r.status === RequisitionStatus.DELETED);
+  ), [filtered]);
+  const disbursedList = useMemo(() => filtered.filter(r => r.status === RequisitionStatus.DISBURSED), [filtered]);
+  const rejectedList = useMemo(() => filtered.filter(r => r.status === RequisitionStatus.REJECTED || r.status === RequisitionStatus.CANCELLED), [filtered]);
+  const deletedList = useMemo(() => filtered.filter(r => r.status === RequisitionStatus.DELETED), [filtered]);
 
   // Paginated slices
   const activeItems = activeList.slice((activePage - 1) * ITEMS_PER_PAGE, activePage * ITEMS_PER_PAGE);

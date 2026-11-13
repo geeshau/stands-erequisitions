@@ -1141,6 +1141,9 @@ export const RequisitionProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const isFetchingDbRef = React.useRef(false);
   const lastDbEtagRef = React.useRef<string>("");
   const lastPresenceTimeRef = React.useRef(0);
+  // Per-collection raw payload fingerprints — lets the poll skip mapping + setState
+  // for collections that haven't changed, avoiding full-app re-renders every cycle.
+  const collectionHashesRef = React.useRef<Record<string, string>>({});
 
   const triggerToast = useCallback((toast: Omit<BudgetAlert, "id" | "isRead"> & { isRead?: boolean }) => {
     const id = `toast-${Math.random().toString(36).substring(2, 9)}`;
@@ -2493,6 +2496,21 @@ export const RequisitionProvider: React.FC<{ children: React.ReactNode }> = ({ c
           return;
         }
 
+        // Skip mapping + setState for collections whose raw payload is unchanged since
+        // the previous cycle. Prevents 14 state updates (and a full app re-render) when
+        // only a single collection (e.g. user presence heartbeats) actually changed.
+        try {
+          for (const key of Object.keys(dbData)) {
+            if (!Array.isArray(dbData[key])) continue;
+            const fingerprint = JSON.stringify(dbData[key]);
+            if (collectionHashesRef.current[key] === fingerprint) {
+              dbData[key] = undefined;
+            } else {
+              collectionHashesRef.current[key] = fingerprint;
+            }
+          }
+        } catch (e) {}
+
         // Process Requisitions
         try {
           if (dbData?.requisitions && Array.isArray(dbData.requisitions)) {
@@ -2548,6 +2566,14 @@ export const RequisitionProvider: React.FC<{ children: React.ReactNode }> = ({ c
             if (isGroupUser && parsedGroups.length > 0) {
               const userEmailLower = (currentUser?.email || "").toLowerCase().trim();
               const userId = currentUser?.id;
+              // Resolve any deep-linked requisition ID once per cycle, not per item
+              let deepLinkReqId = "";
+              if (typeof window !== "undefined") {
+                try {
+                  const urlParams = new URLSearchParams(window.location.search);
+                  deepLinkReqId = (urlParams.get("reqId") || urlParams.get("requisitionId") || urlParams.get("id") || sessionStorage.getItem("pending_deep_link_req_id") || "").trim().toLowerCase();
+                } catch (e) {}
+              }
               data = data.filter(req => {
                 if (!req) return false;
                 // 1. Group affiliation (ID or Name)
@@ -2575,18 +2601,11 @@ export const RequisitionProvider: React.FC<{ children: React.ReactNode }> = ({ c
                 }
 
                 // 5. Target direct requisition ID requested via URL deep link or stored session
-                if (typeof window !== "undefined") {
-                  try {
-                    const urlParams = new URLSearchParams(window.location.search);
-                    const activeReqId = urlParams.get("reqId") || urlParams.get("requisitionId") || urlParams.get("id") || sessionStorage.getItem("pending_deep_link_req_id");
-                    if (activeReqId) {
-                      const cleanActive = activeReqId.trim().toLowerCase();
-                      const reqIdLower = (req.id || "").toLowerCase();
-                      if (reqIdLower === cleanActive || reqIdLower.replace(/[-_]/g, "") === cleanActive.replace(/[-_]/g, "")) {
-                        return true;
-                      }
-                    }
-                  } catch (e) {}
+                if (deepLinkReqId) {
+                  const reqIdLower = (req.id || "").toLowerCase();
+                  if (reqIdLower === deepLinkReqId || reqIdLower.replace(/[-_]/g, "") === deepLinkReqId.replace(/[-_]/g, "")) {
+                    return true;
+                  }
                 }
 
                 return false;
@@ -3001,12 +3020,38 @@ export const RequisitionProvider: React.FC<{ children: React.ReactNode }> = ({ c
     };
 
     fetchAllFromMongoDB();
-    // Background polling interval to keep UI reactive even without websockets
-    pollInterval = setInterval(fetchAllFromMongoDB, 20000);
+    // Background polling interval to keep UI reactive even without websockets.
+    // Pause while the tab is hidden and refresh immediately when it becomes visible
+    // to avoid wasted fetches, parsing, and re-renders in background tabs.
+    const startPolling = () => {
+      if (pollInterval) return;
+      pollInterval = setInterval(fetchAllFromMongoDB, 20000);
+    };
+    const stopPolling = () => {
+      if (pollInterval) {
+        clearInterval(pollInterval);
+        pollInterval = null;
+      }
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        fetchAllFromMongoDB();
+        startPolling();
+      } else {
+        stopPolling();
+      }
+    };
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+      stopPolling();
+    } else {
+      startPolling();
+    }
+    document.addEventListener("visibilitychange", handleVisibility);
 
     return () => {
       active = false;
-      if (pollInterval) clearInterval(pollInterval);
+      stopPolling();
+      document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [
     currentUserId,

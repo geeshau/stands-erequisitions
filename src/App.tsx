@@ -1077,6 +1077,29 @@ function AppContent() {
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
 
+  // Local echo of the global search term so each keystroke only re-renders this
+  // component; the context (which re-renders the whole provider tree) is updated
+  // on a short debounce.
+  const [localSearchTerm, setLocalSearchTerm] = useState(globalSearchTerm);
+  const lastPushedSearchRef = useRef(globalSearchTerm);
+
+  useEffect(() => {
+    // Sync externally-driven changes (e.g. cleared after navigation) into the input
+    if (globalSearchTerm !== lastPushedSearchRef.current) {
+      lastPushedSearchRef.current = globalSearchTerm;
+      setLocalSearchTerm(globalSearchTerm);
+    }
+  }, [globalSearchTerm]);
+
+  useEffect(() => {
+    if (localSearchTerm === globalSearchTerm) return;
+    const t = setTimeout(() => {
+      lastPushedSearchRef.current = localSearchTerm;
+      setGlobalSearchTerm(localSearchTerm);
+    }, 250);
+    return () => clearTimeout(t);
+  }, [localSearchTerm, globalSearchTerm, setGlobalSearchTerm]);
+
   const autocompleteSuggestions = useMemo(() => {
     const q = globalSearchTerm.trim().toLowerCase();
     if (!q) return { groups: [], projects: [] };
@@ -2756,10 +2779,10 @@ function AppContent() {
                   type="text"
                   placeholder="Search requisitions by title or group..."
                   className="w-full pl-10 pr-16 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-medium text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-2 focus:ring-primary/20 focus:border-primary dark:focus:border-primary outline-none transition-all shadow-xs hover:border-slate-300 dark:hover:border-slate-700"
-                  value={globalSearchTerm}
+                  value={localSearchTerm}
                   onChange={(e) => {
                     const val = e.target.value;
-                    setGlobalSearchTerm(val);
+                    setLocalSearchTerm(val);
                     if (val.trim() !== "") {
                       handleNavigate("requisitions");
                     }
@@ -2767,19 +2790,27 @@ function AppContent() {
                   onFocus={() => setIsSearchFocused(true)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
-                      saveRecentSearch(globalSearchTerm);
+                      saveRecentSearch(localSearchTerm);
                       setIsSearchFocused(false);
+                      lastPushedSearchRef.current = localSearchTerm;
+                      setGlobalSearchTerm(localSearchTerm);
                       handleNavigate("requisitions");
                       (e.target as HTMLInputElement).blur();
                       setTimeout(() => {
+                        setLocalSearchTerm("");
+                        lastPushedSearchRef.current = "";
                         setGlobalSearchTerm("");
                       }, 1000);
                     }
                   }}
                 />
-                {globalSearchTerm && (
+                {localSearchTerm && (
                   <button
-                    onClick={() => setGlobalSearchTerm("")}
+                    onClick={() => {
+                      setLocalSearchTerm("");
+                      lastPushedSearchRef.current = "";
+                      setGlobalSearchTerm("");
+                    }}
                     className="absolute right-10 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-1 cursor-pointer transition-colors"
                   >
                     <X size={14} />

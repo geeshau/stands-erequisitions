@@ -380,11 +380,11 @@ const Dashboard: React.FC<{
       : requisitions.slice(0, 5);
   }, [activeFiscalYearRequisitions, requisitions]);
 
-  const activeAlerts = alerts.filter(a => {
+  const activeAlerts = useMemo(() => alerts.filter(a => {
     if (a.isRead) return false;
     if (a.targetRole && currentUser?.role !== a.targetRole && currentUser?.role !== UserRole.ADMIN && currentUser?.role !== UserRole.SUPER_ADMIN) return false;
     return true;
-  });
+  }), [alerts, currentUser?.role]);
 
   // Unified timeline derived from unread alerts and system logs
   const combinedTimeline = useMemo(() => {
