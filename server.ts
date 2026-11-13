@@ -9333,9 +9333,22 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  // Dual-stack listen (IPv6 + IPv4). Binding only to 0.0.0.0 forces Windows
+  // `localhost` (which resolves to ::1 first) through a ~2s IPv6 connection
+  // timeout on EVERY request before falling back to IPv4. A dual-stack socket
+  // still accepts plain IPv4 traffic, so container ingress proxies are unaffected.
+  const onListening = () => {
     console.log(`Server running on http://localhost:${PORT}`);
     console.log("✅ Build successful! Server is online and ready to accept requests.");
+  };
+  const server = app.listen(PORT, onListening);
+  server.on("error", (err: any) => {
+    if (err && (err.code === "EADDRNOTAVAIL" || err.code === "EAFNOSUPPORT")) {
+      console.warn("[Server] Dual-stack bind unavailable, falling back to IPv4 0.0.0.0...");
+      app.listen(PORT, "0.0.0.0", onListening);
+    } else {
+      throw err;
+    }
   });
 }
 
