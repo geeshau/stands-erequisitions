@@ -1,0 +1,26 @@
+[
+  {
+    "id": "embak-1794541894919",
+    "timestamp": "2026-11-13T03:51:33.931Z",
+    "targetEmail": "geeshau.standsmedia@gmail.com",
+    "fileName": "STANDS_eReqs_WEEKLY_Backup_2026-11-13T03-51.enc.json",
+    "sizeKb": 86,
+    "status": "SIMULATED_LOCAL_STORE",
+    "warning": "Missing credentials for \"PLAIN\"",
+    "isEncrypted": true,
+    "algorithm": "AES-256-GCM",
+    "checksumSha256": "0e3a576317ea109744043b7e6c439dcde9b49670c73d9fee0eeffd52192a3742",
+    "summary": {
+      "totalRequisitions": 6,
+      "totalUsers": 46,
+      "totalProjects": 4,
+      "totalGroups": 18,
+      "totalLedgers": 0,
+      "totalFiscalYears": 0,
+      "totalVendors": 0,
+      "totalLogs": 23,
+      "totalCalendarEvents": 0
+    },
+    "triggerType": "SCHEDULED_WEEKLY"
+  }
+]

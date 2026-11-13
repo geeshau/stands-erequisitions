@@ -1,0 +1,21 @@
+{
+  "targetEmail": "geeshau.standsmedia@gmail.com",
+  "enabled": true,
+  "frequency": "WEEKLY",
+  "scheduleTime": "04:00",
+  "dayOfWeek": 5,
+  "dayOfMonth": 1,
+  "lastSentTimestamp": "2026-11-13T03:51:33.931Z",
+  "totalBackupsSent": 1,
+  "encryptionEnabled": true,
+  "encryptionAlgorithm": "AES-256-GCM",
+  "backupPassphrase": "",
+  "features": {
+    "sendEmail": true,
+    "saveServerDiskSnapshot": true,
+    "includeAuditLogs": true,
+    "includeCalendarAndLedger": true,
+    "slackAlertEnabled": false,
+    "slackWebhookUrl": ""
+  }
+}
