@@ -9329,6 +9329,13 @@ async function startServer() {
     }));
     app.get("*", (req, res) => {
       res.setHeader("Cache-Control", "no-cache");
+      // Serve the SPA shell for all paths; the client renders a branded 404 page
+      // for unknown routes. Send a proper 404 status for non-root paths so
+      // crawlers and monitoring tools see the correct semantics.
+      const cleanPath = (req.path || "/").replace(/\/+$/, "") || "/";
+      if (cleanPath !== "/" && cleanPath !== "/index.html") {
+        res.status(404);
+      }
       res.sendFile(path.join(distPath, "index.html"));
     });
   }

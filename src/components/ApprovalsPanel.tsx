@@ -28,7 +28,7 @@ import { formatCurrency, formatDate, cn, formatRequisitionAge } from "../lib/uti
 import { motion, AnimatePresence } from "motion/react";
 
 export const ApprovalsPanel: React.FC = () => {
-  const { requisitions, updateRequisitionStatus, currentUser, globalSearchTerm, canPerform, systemSettings } = useRequisitions();
+  const { requisitions, updateRequisitionStatus, currentUser, globalSearchTerm, canPerform, systemSettings, loading: dataLoading } = useRequisitions();
   const [selectedReq, setSelectedReq] = useState<Requisition | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [approvalStep, setApprovalStep] = useState<"DETAILS" | "SUCCESS">("DETAILS");
@@ -301,7 +301,15 @@ export const ApprovalsPanel: React.FC = () => {
           ))}
         </AnimatePresence>
 
-        {pendingApprovals.length === 0 && (
+        {pendingApprovals.length === 0 && dataLoading && (
+          <div className="flex flex-col gap-3">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="w-full h-24 bg-slate-100 rounded-3xl animate-pulse" />
+            ))}
+          </div>
+        )}
+
+        {pendingApprovals.length === 0 && !dataLoading && (
           <div className="py-32 flex flex-col items-center justify-center bg-white rounded-3xl border border-slate-200 border-dashed animate-in fade-in transition-all">
              <div className="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center mb-6 relative">
                 <CheckCircle2 size={40} className="text-emerald-500/30" />

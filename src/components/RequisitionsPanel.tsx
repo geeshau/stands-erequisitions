@@ -3999,7 +3999,15 @@ export const RequisitionsPanel: React.FC = () => {
             </div>
           )}
 
-          {activeList.length === 0 && (
+          {activeList.length === 0 && loading && (
+            <div className="py-8 w-full flex flex-col gap-3 px-6">
+              {[1, 2, 3, 4, 5].map(i => (
+                <div key={i} className="w-full h-16 bg-slate-100 rounded-2xl animate-pulse" />
+              ))}
+            </div>
+          )}
+
+          {activeList.length === 0 && !loading && (
             <div className="py-24 text-center">
               <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-100">
                 <Search size={24} className="text-slate-300" />

@@ -2407,10 +2407,18 @@ export const FinanceLedgerPanel: React.FC = () => {
             </div>
 
             {ledgerEntries.length === 0 ? (
-              <div className="p-12 text-center text-slate-400 space-y-2">
-                <Database className="mx-auto text-slate-300" size={32} />
-                <p className="text-xs font-medium">No financial ledger entries found matching the filter.</p>
-              </div>
+              syncingTargets.has("requisitions") ? (
+                <div className="p-6 flex flex-col gap-3">
+                  {[1, 2, 3, 4, 5].map(i => (
+                    <div key={i} className="w-full h-14 bg-slate-100 rounded-2xl animate-pulse" />
+                  ))}
+                </div>
+              ) : (
+                <div className="p-12 text-center text-slate-400 space-y-2">
+                  <Database className="mx-auto text-slate-300" size={32} />
+                  <p className="text-xs font-medium">No financial ledger entries found matching the filter.</p>
+                </div>
+              )
             ) : (
               <>
                 {/* Mobile Card Feed for Small Screens (< md) */}

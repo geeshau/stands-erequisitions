@@ -2425,6 +2425,15 @@ export const RequisitionProvider: React.FC<{ children: React.ReactNode }> = ({ c
     let active = true;
     let pollInterval: any = null;
 
+    // Mark all datasets as syncing for the initial load so panels can render
+    // loading skeletons instead of misleading "no data" empty states.
+    setSyncingTargets(new Set([
+      "requisitions", "projects", "alerts", "fiscal_years", "transactions",
+      "forecast", "reports", "system_logs", "users", "permissions",
+      "settings", "thresholds", "church_groups", "ledger_books",
+      "supplementary_budgets", "vendors"
+    ]));
+
     const fetchAllFromMongoDB = async () => {
       if (isFetchingDbRef.current) return;
       isFetchingDbRef.current = true;
@@ -3016,6 +3025,9 @@ export const RequisitionProvider: React.FC<{ children: React.ReactNode }> = ({ c
       } finally {
         isFetchingDbRef.current = false;
         setLoading(false);
+        // Initial fetch cycle finished — clear syncing flags so panels can show
+        // genuine empty states if collections are truly empty.
+        setSyncingTargets(prev => (prev.size > 0 ? new Set<string>() : prev));
       }
     };
 

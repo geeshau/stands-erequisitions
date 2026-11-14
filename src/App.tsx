@@ -17,9 +17,12 @@ import { Sidebar } from "./components/Sidebar";
 const Dashboard = lazy(() => import("./components/Dashboard"));
 import { useIdleTimeout } from "./hooks/useIdleTimeout";
 import { PanelSkeletonFallback } from "./components/PanelSkeletonFallback";
+import { ModalLoadingFallback } from "./components/ModalLoadingFallback";
 import { getRecentSearches, saveRecentSearchTerm, removeRecentSearchTerm, clearAllRecentSearchTerms } from "./lib/searchHistory";
 import { UserRole, RequisitionStatus, BudgetAlert, SearchFilter, PermissionConfig } from "./types";
 import { AnnouncementBanner } from "./components/AnnouncementBanner";
+import { NotFoundPage } from "./components/NotFoundPage";
+import { OfflinePage } from "./components/OfflinePage";
 
 // Lazy-loaded panel components to reduce initial JavaScript load
 const RequisitionsPanel = lazy(() => import("./components/RequisitionsPanel").then(m => ({ default: m.RequisitionsPanel })));
@@ -1322,6 +1325,21 @@ function AppContent() {
     );
   }
 
+  // 404 — this SPA only serves the root path; deep links use query params (?reqId=).
+  // The server returns index.html for every unknown path, so handle it client-side.
+  {
+    const cleanPath = window.location.pathname.replace(/\/+$/, "") || "/";
+    if (cleanPath !== "/" && cleanPath !== "/index.html") {
+      return <NotFoundPage darkMode={darkMode} />;
+    }
+  }
+
+  // Full offline page when there's no authenticated session to fall back on.
+  // (Logged-in users instead get the amber read-only cached-data banner.)
+  if (!isOnline && !currentUser && !authLoading) {
+    return <OfflinePage darkMode={darkMode} />;
+  }
+
   if (authLoading) {
     return (
       <div className={cn(
@@ -1793,7 +1811,11 @@ function AppContent() {
   // Animated Splash Screen after login
   if (showSplash) {
     return (
-      <Suspense fallback={null}>
+      <Suspense fallback={
+        <div className={cn("min-h-screen flex items-center justify-center", darkMode ? "bg-[#121214]" : "bg-slate-50")}>
+          <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+        </div>
+      }>
         <SplashPage
           darkMode={darkMode}
           durationMs={4500}
@@ -2478,7 +2500,7 @@ function AppContent() {
         )}
 
         {showFeedbackModal && currentUser && (
-          <Suspense fallback={null}>
+          <Suspense fallback={<ModalLoadingFallback />}>
             <FeedbackModal currentUser={currentUser} onClose={() => setShowFeedbackModal(false)} />
           </Suspense>
         )}
@@ -3600,7 +3622,7 @@ function AppContent() {
       </div>
 
       {isGeneratingReceiptFromHub && (
-        <Suspense fallback={null}>
+        <Suspense fallback={<ModalLoadingFallback />}>
           <ReceiptTemplateGenerator
             req={isGeneratingReceiptFromHub}
             onClose={() => setIsGeneratingReceiptFromHub(null)}

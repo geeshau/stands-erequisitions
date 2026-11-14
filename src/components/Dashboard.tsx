@@ -15,6 +15,7 @@ import { BudgetCircularGauges } from "./BudgetCircularGauges";
 import { RecentCommentsAndReactionsFeed } from "./RecentCommentsAndReactionsFeed";
 import { GlobalFiscalOverview } from "./GlobalFiscalOverview";
 import { MinistrySpendingFeed } from "./MinistrySpendingFeed";
+import { ModalLoadingFallback } from "./ModalLoadingFallback";
 
 // Lazy-load heavy modal components only rendered on user interaction
 const ReceiptTemplateGenerator = lazy(() => import("./ReceiptTemplateGenerator").then(m => ({ default: m.ReceiptTemplateGenerator })));
@@ -1918,7 +1919,7 @@ const Dashboard: React.FC<{
       {/* Receipt Generator Modal */}
       <AnimatePresence>
         {isGeneratingReceipt && (
-          <Suspense fallback={null}>
+          <Suspense fallback={<ModalLoadingFallback />}>
             <ReceiptTemplateGenerator 
               req={isGeneratingReceipt} 
               onClose={() => setIsGeneratingReceipt(null)} 
@@ -2406,7 +2407,7 @@ const Dashboard: React.FC<{
         )}
 
         {isNewRequisitionModalOpen && (
-          <Suspense fallback={null}>
+          <Suspense fallback={<ModalLoadingFallback />}>
             <NewRequisitionForm onClose={() => setIsNewRequisitionModalOpen(false)} />
           </Suspense>
         )}

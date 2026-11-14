@@ -1,7 +1,11 @@
-const CACHE_NAME = 'stands-cache-v4';
+const CACHE_NAME = 'stands-cache-v5';
 const STATIC_ASSET_RE = /\/assets\/[^?]+\.(js|css|woff2?|png|svg|jpg|webp)(\?|$)/;
+const OFFLINE_URL = '/offline.html';
 
 self.addEventListener('install', (e) => {
+  e.waitUntil(
+    caches.open(CACHE_NAME).then((c) => c.addAll([OFFLINE_URL])).catch(() => {})
+  );
   self.skipWaiting();
 });
 
@@ -47,6 +51,24 @@ self.addEventListener('fetch', (e) => {
           return res;
         });
       })
+    );
+    return;
+  }
+
+  // Page navigations: network-first, then cached page, then branded offline page
+  if (e.request.mode === 'navigate') {
+    e.respondWith(
+      fetch(e.request)
+        .then((res) => {
+          if (res.ok) {
+            const clone = res.clone();
+            caches.open(CACHE_NAME).then((c) => c.put(e.request, clone));
+          }
+          return res;
+        })
+        .catch(() =>
+          caches.match(e.request).then((cached) => cached || caches.match(OFFLINE_URL))
+        )
     );
     return;
   }
